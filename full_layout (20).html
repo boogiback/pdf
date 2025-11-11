@@ -1,0 +1,3510 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer with Panel</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1d29;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* כותרת עליונה */
+        .header {
+            background: #2d3748;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            border-bottom: 2px solid #1a202c;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .header-title {
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-file-name {
+            color: #a0aec0;
+            font-size: 14px;
+            font-weight: 400;
+        }
+
+        .version-badge {
+            background: rgba(72, 187, 120, 0.2);
+            color: #48bb78;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(72, 187, 120, 0.3);
+        }
+
+        /* תוכן ראשי */
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* חלונית שמאלית */
+        .left-panel {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            width: 336px;
+            min-width: 280px;
+            max-width: 600px;
+            height: calc(100vh - 60px);
+            background: #1a1d29;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border-radius: 0 12px 12px 0;
+            z-index: 100;
+            transition: left 0.3s ease, right 0.3s ease, width 0.3s ease, border-radius 0.3s ease;
+        }
+
+        .left-panel.docked-left {
+            left: 0;
+            right: auto;
+            border-radius: 0 12px 12px 0;
+        }
+
+        .left-panel.docked-right {
+            left: auto;
+            right: 0;
+            border-radius: 12px 0 0 12px;
+        }
+
+        .left-panel.collapsed {
+            width: 40px !important;
+            min-width: 40px !important;
+            padding: 10px 5px;
+        }
+
+        .left-panel.collapsed .panel-container {
+            display: none;
+        }
+
+        .left-panel.collapsed .resize-handle {
+            display: none;
+        }
+
+        .left-panel.collapsed .panel-controls {
+            flex-direction: column;
+            gap: 8px;
+            right: 6px;
+            top: 6px;
+        }
+
+        .left-panel.docked-right.collapsed .panel-controls {
+            right: auto;
+            left: 6px;
+        }
+
+        /* Panel controls */
+        .panel-controls {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 6px;
+            z-index: 20;
+        }
+
+        .left-panel.docked-right .panel-controls {
+            right: auto;
+            left: 8px;
+        }
+
+        .panel-control-btn {
+            width: 28px;
+            height: 28px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 6px;
+            color: #a0aec0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .panel-control-btn:hover {
+            background: rgba(72, 187, 120, 0.3);
+            color: #48bb78;
+        }
+
+        /* PDF Viewer adjusts dynamically when panel is docked */
+        .pdf-viewer {
+            flex: 1;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+            position: fixed;
+            top: 60px;
+            bottom: 0;
+            left: 336px;
+            right: 0;
+            transition: left 0.3s ease, right 0.3s ease;
+        }
+
+        /* Collapsed panel content */
+        .collapsed-info {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 20px;
+            height: 100%;
+            padding-top: 80px;
+            width: 100%;
+        }
+
+        .left-panel.collapsed .collapsed-info {
+            display: flex;
+        }
+
+        .collapsed-page-num,
+        .collapsed-sku,
+        .collapsed-item {
+            color: #ffffff;
+            font-weight: 600;
+            text-align: center;
+            width: 100%;
+            word-break: break-word;
+        }
+
+        .collapsed-page-num {
+            font-size: 18px;
+        }
+
+        .collapsed-sku {
+            font-size: 11px;
+            color: #48bb78;
+            line-height: 1.2;
+        }
+
+        .collapsed-item {
+            font-size: 16px;
+        }
+
+        /* Resize handles */
+        .resize-handle {
+            position: absolute;
+            background: transparent;
+            z-index: 10;
+        }
+
+        .resize-handle-n {
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            cursor: ns-resize;
+        }
+
+        .resize-handle-s {
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            cursor: ns-resize;
+        }
+
+        .resize-handle-e {
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 8px;
+            cursor: ew-resize;
+        }
+
+        .resize-handle-w {
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 8px;
+            cursor: ew-resize;
+        }
+
+        .resize-handle-ne {
+            top: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nesw-resize;
+        }
+
+        .resize-handle-nw {
+            top: 0;
+            left: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+        }
+
+        .resize-handle-se {
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+        }
+
+        .resize-handle-sw {
+            bottom: 0;
+            left: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nesw-resize;
+        }
+
+        /* Drag handle */
+        .drag-handle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            cursor: move;
+            z-index: 5;
+        }
+
+        /* Resizer */
+        .resizer {
+            width: 5px;
+            background: #2d3748;
+            cursor: col-resize;
+            position: relative;
+            transition: background 0.2s;
+        }
+
+        .resizer:hover {
+            background: #48bb78;
+        }
+
+        .resizer::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .resizer:hover::before {
+            opacity: 1;
+        }
+
+        /* PDF Viewer - צד ימין */
+        .pdf-content {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            overflow: auto;
+        }
+
+        .pdf-canvas-container {
+            padding: 20px;
+            background: #525659;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            position: relative;
+        }
+
+        .pdf-canvas {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            background: white;
+            margin-bottom: 20px;
+            height: auto;
+            display: block;
+        }
+
+        /* Selection overlay for crop tool */
+        .selection-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .selection-overlay.active {
+            pointer-events: auto;
+            cursor: crosshair;
+        }
+
+        .pdf-placeholder {
+            text-align: center;
+            color: #666;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .upload-pdf-btn {
+            background: #48bb78;
+            color: #ffffff;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+        }
+
+        .upload-pdf-btn:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(72, 187, 120, 0.4);
+        }
+
+        .pdf-input-hidden {
+            display: none;
+        }
+
+        .pdf-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* ==================== */
+        /* קומפוננט החלונית */
+        /* ==================== */
+        
+        .panel-container {
+            width: 100%;
+            max-width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* חלק עליון - כהה יותר */
+        .upper-section {
+            background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+            padding: 12px 20px;
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
+            flex-shrink: 0;
+        }
+
+        /* שורת כותרת עם מספר עמוד ופריט */
+        .header-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1px;
+            background: transparent;
+            margin-bottom: 10px;
+        }
+
+        .header-item {
+            background: transparent;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 15px 10px;
+            min-height: 90px;
+        }
+
+        .header-label {
+            font-size: 8px;
+            color: #a0aec0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .header-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            line-height: 1;
+        }
+
+        .header-value-sku {
+            font-size: 20px;
+            font-weight: 700;
+            color: #48bb78;
+            line-height: 1;
+            letter-spacing: 1px;
+        }
+
+        /* שם המוצר - דגש */
+        .product-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 10px;
+            line-height: 1.2;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        /* מידע משני - קטן יותר */
+        .secondary-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1px;
+            background: transparent;
+        }
+
+        .info-item {
+            background: transparent;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 10px;
+            min-height: 70px;
+        }
+
+        .info-label {
+            font-size: 9px;
+            color: #718096;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .info-value {
+            font-size: 13px;
+            color: #cbd5e0;
+            font-weight: 500;
+        }
+
+        .page-type-badge {
+            display: inline-block;
+            background: #48bb78;
+            color: #1a202c;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        /* חלק תחתון - בהיר יותר */
+        .lower-section {
+            background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+            padding: 20px;
+            border-radius: 0 0 20px 20px;
+            flex: 1;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            color: #a0aec0;
+            font-size: 14px;
+            overflow: hidden;
+        }
+
+        .comments-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .comments-title {
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .comments-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .export-btn {
+            background: #4a5568;
+            color: #ffffff;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .export-btn:hover {
+            background: #4299e1;
+            transform: translateY(-1px);
+        }
+
+        .add-comment-btn {
+            background: #48bb78;
+            color: #ffffff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .add-comment-btn:hover {
+            background: #38a169;
+            transform: translateY(-1px);
+        }
+
+        .comments-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .comment-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .comment-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .comment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .comment-category {
+            background: #4299e1;
+            color: #ffffff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .comment-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .comment-action-btn {
+            background: transparent;
+            border: none;
+            color: #a0aec0;
+            cursor: pointer;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .comment-action-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .comment-text {
+            color: #cbd5e0;
+            font-size: 12px;
+            line-height: 1.5;
+            flex: 1;
+        }
+
+        .comment-body {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .comment-thumbnail {
+            width: 60px;
+            height: 60px;
+            flex-shrink: 0;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid #4a5568;
+            transition: border-color 0.2s;
+        }
+
+        .comment-thumbnail:hover {
+            border-color: #48bb78;
+        }
+
+        .comment-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .empty-comments {
+            text-align: center;
+            color: #718096;
+            padding: 40px 20px;
+            opacity: 0.7;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: #2d3748;
+            border-radius: 12px;
+            padding: 18px;
+            width: 90%;
+            max-width: 450px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .form-group {
+            margin-bottom: 10px;
+        }
+
+        .form-label {
+            display: block;
+            color: #a0aec0;
+            font-size: 12px;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .form-input,
+        .form-textarea,
+        .form-select {
+            width: 100%;
+            background: #1a202c;
+            border: 1px solid #4a5568;
+            color: #ffffff;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus,
+        .form-textarea:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: #48bb78;
+            background: #212936;
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .form-select {
+            cursor: pointer;
+        }
+
+        /* Tags system */
+        .tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tag-btn {
+            background: #1a202c;
+            border: 2px solid #4a5568;
+            color: #a0aec0;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tag-btn:hover {
+            border-color: #48bb78;
+            color: #ffffff;
+        }
+
+        .tag-btn.selected {
+            background: #48bb78;
+            border-color: #48bb78;
+            color: #ffffff;
+        }
+
+        .tag-btn.other-tag {
+            background: #4299e1;
+            border-color: #4299e1;
+        }
+
+        .tag-btn.other-tag.selected {
+            background: #3182ce;
+            border-color: #3182ce;
+        }
+
+        .other-input {
+            display: none;
+            margin-top: 8px;
+        }
+
+        .other-input.active {
+            display: block;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .modal-bottom-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal-actions-inline {
+            display: flex;
+            gap: 8px;
+        }
+
+        .modal-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .modal-btn-cancel {
+            background: #4a5568;
+            color: #ffffff;
+        }
+
+        .modal-btn-cancel:hover {
+            background: #5a6778;
+        }
+
+        .modal-btn-save {
+            background: #48bb78;
+            color: #ffffff;
+        }
+
+        .modal-btn-save:hover {
+            background: #38a169;
+        }
+
+        /* File attachments */
+        .attachments-section {
+            margin-top: 12px;
+        }
+
+        .add-file-btn {
+            background: #4299e1;
+            color: #ffffff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .add-file-btn:hover {
+            background: #3182ce;
+        }
+
+        .file-input-hidden {
+            display: none;
+        }
+
+        .attachments-preview {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .attachment-item {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #4a5568;
+        }
+
+        .attachment-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .attachment-remove {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        .attachment-remove:hover {
+            background: #e53e3e;
+        }
+
+        .comment-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .comment-attachment-thumb {
+            width: 60px;
+            height: 60px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .comment-attachment-thumb:hover {
+            border-color: #48bb78;
+            transform: scale(1.05);
+        }
+
+        .comment-attachment-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Image viewer modal */
+        .image-viewer-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-viewer-overlay.active {
+            display: flex;
+        }
+
+        .image-viewer-content {
+            max-width: 90%;
+            max-height: 90%;
+        }
+
+        .image-viewer-content img {
+            max-width: 100%;
+            max-height: 90vh;
+            object-fit: contain;
+        }
+
+        .image-viewer-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-viewer-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Confirmation Modal */
+        .confirm-modal {
+            background: #2d3748;
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .confirm-header {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .confirm-message {
+            color: #cbd5e0;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        .confirm-comment-preview {
+            background: #1a202c;
+            border: 1px solid #4a5568;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .confirm-preview-categories {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .confirm-preview-category {
+            background: #4299e1;
+            color: #ffffff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .confirm-preview-text {
+            color: #cbd5e0;
+            font-size: 13px;
+            line-height: 1.5;
+            margin-top: 8px;
+        }
+
+        .confirm-preview-thumbnail {
+            width: 50px;
+            height: 50px;
+            border-radius: 4px;
+            margin-top: 8px;
+            object-fit: cover;
+            border: 1px solid #4a5568;
+        }
+
+        .confirm-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn-delete {
+            background: #f56565;
+            color: #ffffff;
+        }
+
+        .modal-btn-delete:hover {
+            background: #e53e3e;
+        }
+
+        /* AI Modal Styles */
+        .ai-modal {
+            background: #2d3748;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 900px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
+        }
+
+        .ai-modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #4a5568;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .ai-modal-title {
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .modal-close-btn {
+            background: transparent;
+            border: none;
+            color: #a0aec0;
+            font-size: 32px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .modal-close-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .ai-modal-content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            background: #1a202c;
+        }
+
+        .ai-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: 60px 20px;
+            color: #a0aec0;
+            font-size: 16px;
+        }
+
+        .ai-loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #4a5568;
+            border-top-color: #4299e1;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .ai-modal-actions {
+            padding: 16px 24px;
+            border-top: 1px solid #4a5568;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .modal-btn-secondary {
+            background: #4a5568;
+            color: #ffffff;
+        }
+
+        .modal-btn-secondary:hover {
+            background: #5a6778;
+        }
+
+        /* AI Data Display */
+        .ai-section {
+            background: #2d3748;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .ai-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            cursor: pointer;
+        }
+
+        .ai-section-title {
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .ai-section-toggle {
+            color: #a0aec0;
+            font-size: 18px;
+        }
+
+        .ai-section-content {
+            display: none;
+        }
+
+        .ai-section.expanded .ai-section-content {
+            display: block;
+        }
+
+        .ai-section.expanded .ai-section-toggle {
+            transform: rotate(180deg);
+        }
+
+        .ai-field {
+            margin-bottom: 12px;
+        }
+
+        .ai-field-label {
+            color: #a0aec0;
+            font-size: 12px;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .ai-field-input {
+            width: 100%;
+            background: #1a202c;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            color: #ffffff;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .ai-field-input:focus {
+            outline: none;
+            border-color: #4299e1;
+        }
+
+        .ai-field-textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .ai-list-item {
+            background: #1a202c;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2d3748;
+            color: #ffffff;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            max-width: 90%;
+            text-align: center;
+            font-size: 14px;
+            border-left: 4px solid #48bb78;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        .toast.error {
+            border-left-color: #f56565;
+        }
+
+        .toast.info {
+            border-left-color: #4299e1;
+        }
+
+        /* Floating PDF Toolbar */
+        .pdf-toolbar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(45, 55, 72, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 10px;
+            display: none;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            z-index: 100;
+            max-width: calc(100% - 40px);
+            white-space: nowrap;
+        }
+
+        .pdf-toolbar.active {
+            display: flex;
+        }
+
+        .toolbar-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #ffffff;
+            width: clamp(24px, 4vw, 32px);
+            height: clamp(24px, 4vw, 32px);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: clamp(10px, 1.5vw, 14px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .toolbar-btn:hover {
+            background: rgba(72, 187, 120, 0.8);
+            transform: translateY(-2px);
+        }
+
+        .toolbar-btn.ai-btn {
+            background: #4299e1;
+            color: #ffffff;
+            font-weight: 600;
+            width: auto;
+            padding: 0 12px;
+            gap: 4px;
+        }
+
+        .toolbar-btn.ai-btn:hover {
+            background: #3182ce;
+        }
+
+        .toolbar-btn.export-toolbar-btn {
+            background: rgba(74, 85, 104, 0.8);
+        }
+
+        .toolbar-btn.export-toolbar-btn:hover {
+            background: #4299e1;
+        }
+
+        .toolbar-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .toolbar-btn:disabled:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: none;
+        }
+
+        .toolbar-divider {
+            width: 1px;
+            height: clamp(16px, 3vw, 24px);
+            background: rgba(255, 255, 255, 0.2);
+            margin: 0 clamp(2px, 0.5vw, 6px);
+            flex-shrink: 0;
+        }
+
+        .toolbar-page-info {
+            color: #ffffff;
+            font-size: clamp(9px, 1.2vw, 12px);
+            font-weight: 600;
+            padding: 0 clamp(4px, 1vw, 10px);
+            text-align: center;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .toolbar-zoom-level {
+            color: #a0aec0;
+            font-size: clamp(9px, 1.2vw, 11px);
+            padding: 0 clamp(2px, 0.5vw, 6px);
+            min-width: clamp(30px, 5vw, 45px);
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .toolbar-btn.active {
+            background: rgba(72, 187, 120, 0.8);
+        }
+
+        .empty-state {
+            text-align: center;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <!-- כותרת עליונה -->
+    <div class="header">
+        <div class="header-title">
+            <span class="version-badge">v2.3.0</span>
+            <span class="header-file-name">HOTEL_ROOMS_BIBLE_32_page1-13.pdf</span>
+        </div>
+    </div>
+
+    <!-- תוכן ראשי -->
+    <div class="main-content">
+        <!-- חלונית שמאלית -->
+        <div class="left-panel" id="leftPanel">
+            <!-- Panel controls -->
+            <div class="panel-controls">
+                <button class="panel-control-btn" id="collapseBtn" onclick="toggleCollapse()" title="Collapse/Expand">◀</button>
+                <button class="panel-control-btn" id="switchBtn" onclick="switchSides()" title="Switch Sides">⇄</button>
+            </div>
+            
+            <!-- Collapsed view info -->
+            <div class="collapsed-info" id="collapsedInfo">
+                <div class="collapsed-page-num">7</div>
+                <div class="collapsed-sku">GR-101</div>
+                <div class="collapsed-item">1</div>
+            </div>
+            
+            <!-- Drag handle removed - no free dragging -->
+            
+            <!-- Resize handles -->
+            <div class="resize-handle resize-handle-n" data-direction="n"></div>
+            <div class="resize-handle resize-handle-s" data-direction="s"></div>
+            <div class="resize-handle resize-handle-e" data-direction="e"></div>
+            <div class="resize-handle resize-handle-w" data-direction="w"></div>
+            <div class="resize-handle resize-handle-ne" data-direction="ne"></div>
+            <div class="resize-handle resize-handle-nw" data-direction="nw"></div>
+            <div class="resize-handle resize-handle-se" data-direction="se"></div>
+            <div class="resize-handle resize-handle-sw" data-direction="sw"></div>
+            
+            <!-- קומפוננט החלונית -->
+            <div class="panel-container">
+                <!-- חלק עליון -->
+                <div class="upper-section">
+                    <!-- שורת כותרת: מספר עמוד, SKU ומספר פריט -->
+                    <div class="header-row">
+                        <div class="header-item">
+                            <div class="header-label">Current Page</div>
+                            <div class="header-value">7</div>
+                        </div>
+                        <div class="header-item">
+                            <div class="header-label">SKU Number</div>
+                            <div class="header-value-sku">GR-101</div>
+                        </div>
+                        <div class="header-item">
+                            <div class="header-label">Item #</div>
+                            <div class="header-value">1</div>
+                        </div>
+                    </div>
+
+                    <!-- שם המוצר -->
+                    <div class="product-name">
+                        LUXURY WOODEN CLOSET ARMOIRE
+                    </div>
+
+                    <!-- מידע משני -->
+                    <div class="secondary-info">
+                        <div class="info-item">
+                            <div class="info-label">Page Type</div>
+                            <div class="info-value">
+                                <span class="page-type-badge">Specification</span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Category</div>
+                            <div class="info-value">Casegoods</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Quantity</div>
+                            <div class="info-value">59</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- חלק תחתון - הערות -->
+                <div class="lower-section">
+                    <div class="comments-header">
+                        <div class="comments-title">Comments</div>
+                        <button class="add-comment-btn" onclick="openModal()">Add Comment</button>
+                    </div>
+                    <div class="comments-list" id="commentsList">
+                        <div class="empty-comments">
+                            No comments yet. Click "Add Comment" to start.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PDF Viewer - צד ימין -->
+        <div class="pdf-viewer">
+            <div class="pdf-content" id="pdfContent">
+                <div class="pdf-placeholder" id="pdfPlaceholder">
+                    <div>
+                        <p style="font-size: 24px; margin-bottom: 10px;">📄</p>
+                        <p style="font-size: 18px; color: #333; margin-bottom: 8px;">No PDF loaded</p>
+                        <p style="font-size: 14px; color: #999;">Upload a PDF file to view it here</p>
+                    </div>
+                    <button class="upload-pdf-btn" onclick="document.getElementById('pdfFileInput').click()">
+                        📤 Upload PDF
+                    </button>
+                    <input type="file" id="pdfFileInput" class="pdf-input-hidden" accept=".pdf">
+                </div>
+            </div>
+            
+            <!-- Floating PDF Toolbar -->
+            <div class="pdf-toolbar" id="pdfToolbar">
+                <button class="toolbar-btn" id="zoomOut" onclick="zoomOut()" title="Zoom Out">−</button>
+                <span class="toolbar-zoom-level" id="zoomLevel">100%</span>
+                <button class="toolbar-btn" id="zoomIn" onclick="zoomIn()" title="Zoom In">+</button>
+                
+                <div class="toolbar-divider"></div>
+                
+                <button class="toolbar-btn" id="prevPageBtn" onclick="scrollToPrevPage()" title="Previous Page">◀</button>
+                <span class="toolbar-page-info" id="toolbarPageInfo">Page 1 / 1</span>
+                <button class="toolbar-btn" id="nextPageBtn" onclick="scrollToNextPage()" title="Next Page">▶</button>
+                
+                <div class="toolbar-divider"></div>
+                
+                <button class="toolbar-btn" id="cropMode" onclick="toggleCropMode()" title="Crop Mode">✂</button>
+                <button class="toolbar-btn ai-btn" id="aiExtractBtn" onclick="openAIModal()" title="AI Extract Data">🤖 AI</button>
+                <button class="toolbar-btn export-toolbar-btn" onclick="exportCommentsJSON()" title="Export JSON">📄</button>
+                <button class="toolbar-btn export-toolbar-btn" onclick="exportCommentsHTML()" title="Export HTML">🌐</button>
+                <button class="toolbar-btn export-toolbar-btn" onclick="exportCommentsExcel()" title="Export Excel">📊</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for adding/editing comments -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header" id="modalTitle">Add Comment</div>
+            
+            <div class="form-group">
+                <label class="form-label">Categories (Select one or more)</label>
+                <div class="tags-container" id="tagsContainer">
+                    <button type="button" class="tag-btn selected" data-category="General" onclick="toggleTag(this)">General</button>
+                    <button type="button" class="tag-btn" data-category="Dimensions" onclick="toggleTag(this)">Dimensions</button>
+                    <button type="button" class="tag-btn" data-category="Material" onclick="toggleTag(this)">Material</button>
+                    <button type="button" class="tag-btn" data-category="Finish" onclick="toggleTag(this)">Finish</button>
+                    <button type="button" class="tag-btn" data-category="Colors" onclick="toggleTag(this)">Colors</button>
+                    <button type="button" class="tag-btn other-tag" data-category="Other" onclick="toggleOtherTag(this)">Other</button>
+                </div>
+                <input type="text" class="form-input other-input" id="otherCategory" placeholder="Enter custom category">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Comment</label>
+                <textarea class="form-textarea" id="commentText" placeholder="Enter your comment here... (You can also paste images directly)"></textarea>
+            </div>
+
+            <div class="form-group" id="croppedImageContainer" style="display: none;">
+                <label class="form-label">Selected Area</label>
+                <img id="croppedImage" style="max-width: 150px; max-height: 150px; border-radius: 6px; border: 2px solid #48bb78; object-fit: contain;">
+            </div>
+
+            <div class="form-group">
+                <div class="modal-bottom-actions">
+                    <button type="button" class="add-file-btn" onclick="document.getElementById('fileInput').click()">
+                        📎 Add Files
+                    </button>
+                    <div class="modal-actions-inline">
+                        <button class="modal-btn modal-btn-cancel" onclick="closeModal()">Cancel</button>
+                        <button class="modal-btn modal-btn-save" onclick="saveComment()">Save</button>
+                    </div>
+                </div>
+                <input type="file" id="fileInput" class="file-input-hidden" accept="image/*" multiple onchange="handleFileSelect(event)">
+                <div class="attachments-preview" id="attachmentsPreview"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image viewer modal -->
+    <div class="image-viewer-overlay" id="imageViewer">
+        <button class="image-viewer-close" onclick="closeImageViewer()">×</button>
+        <div class="image-viewer-content">
+            <img id="viewerImage" src="" alt="Attachment">
+        </div>
+    </div>
+
+    <!-- Confirmation modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="confirm-modal">
+            <div class="confirm-header">Delete Comment</div>
+            <div class="confirm-message">Are you sure you want to delete this comment? This action cannot be undone.</div>
+            <div class="confirm-comment-preview" id="confirmCommentPreview"></div>
+            <div class="confirm-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeConfirmModal()">Cancel</button>
+                <button class="modal-btn modal-btn-delete" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Extract Data Modal -->
+    <div class="modal-overlay" id="aiModal">
+        <div class="ai-modal">
+            <div class="ai-modal-header">
+                <div class="ai-modal-title">🤖 AI Data Extraction</div>
+                <button class="modal-close-btn" onclick="closeAIModal()">×</button>
+            </div>
+            
+            <div class="ai-modal-content" id="aiModalContent">
+                <div class="ai-loading">
+                    <div class="ai-loading-spinner"></div>
+                    <div>Extracting data from PDF...</div>
+                </div>
+            </div>
+            
+            <div class="ai-modal-actions">
+                <button class="modal-btn modal-btn-secondary" onclick="exportJSON()">📄 Export JSON</button>
+                <button class="modal-btn modal-btn-secondary" onclick="exportCSV()">📊 Export CSV</button>
+                <button class="modal-btn modal-btn-cancel" onclick="closeAIModal()">Cancel</button>
+                <button class="modal-btn modal-btn-save" onclick="confirmAIData()">✓ Confirm & Create Comments</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ============================================
+        // TOAST NOTIFICATION SYSTEM
+        // ============================================
+        
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast show';
+            
+            if (type === 'error') {
+                toast.classList.add('error');
+            } else if (type === 'info') {
+                toast.classList.add('info');
+            }
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // ============================================
+        // MAIN APPLICATION
+        // ============================================
+        
+        let comments = [];
+        let editingIndex = null;
+        let currentAttachments = [];
+
+        function toggleTag(button) {
+            button.classList.toggle('selected');
+        }
+
+        function toggleOtherTag(button) {
+            button.classList.toggle('selected');
+            const otherInput = document.getElementById('otherCategory');
+            
+            if (button.classList.contains('selected')) {
+                otherInput.classList.add('active');
+                otherInput.focus();
+            } else {
+                otherInput.classList.remove('active');
+                otherInput.value = '';
+            }
+        }
+
+        function getSelectedCategories() {
+            const selectedTags = document.querySelectorAll('.tag-btn.selected:not(.other-tag)');
+            const categories = Array.from(selectedTags).map(tag => tag.dataset.category);
+            
+            const otherTag = document.querySelector('.tag-btn.other-tag');
+            const otherInput = document.getElementById('otherCategory');
+            
+            if (otherTag.classList.contains('selected') && otherInput.value.trim()) {
+                categories.push(otherInput.value.trim());
+            }
+            
+            return categories;
+        }
+
+        function clearTagSelection() {
+            document.querySelectorAll('.tag-btn').forEach(tag => {
+                tag.classList.remove('selected');
+            });
+            document.getElementById('otherCategory').classList.remove('active');
+            document.getElementById('otherCategory').value = '';
+        }
+
+        function setSelectedCategories(categories) {
+            clearTagSelection();
+            
+            const predefinedCategories = ['General', 'Dimensions', 'Material', 'Finish', 'Colors'];
+            
+            categories.forEach(category => {
+                if (predefinedCategories.includes(category)) {
+                    const tagBtn = document.querySelector(`.tag-btn[data-category="${category}"]`);
+                    if (tagBtn) {
+                        tagBtn.classList.add('selected');
+                    }
+                } else {
+                    // Custom category (Other)
+                    const otherTag = document.querySelector('.tag-btn.other-tag');
+                    otherTag.classList.add('selected');
+                    const otherInput = document.getElementById('otherCategory');
+                    otherInput.classList.add('active');
+                    otherInput.value = category;
+                }
+            });
+        }
+
+        // Handle file selection
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            for (let file of files) {
+                if (file.type.startsWith('image/')) {
+                    addImageAttachment(file);
+                }
+            }
+            event.target.value = ''; // Reset input
+        }
+
+        // Add image from file
+        function addImageAttachment(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // Convert to JPEG
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Convert to JPEG base64
+                    const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                    currentAttachments.push(jpegDataUrl);
+                    renderAttachments();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Handle paste event for images
+        document.getElementById('commentText').addEventListener('paste', function(e) {
+            const items = e.clipboardData.items;
+            for (let item of items) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    const file = item.getAsFile();
+                    addImageAttachment(file);
+                }
+            }
+        });
+
+        // Render attachment previews
+        function renderAttachments() {
+            const preview = document.getElementById('attachmentsPreview');
+            preview.innerHTML = currentAttachments.map((src, index) => `
+                <div class="attachment-item">
+                    <img src="${src}" alt="Attachment ${index + 1}">
+                    <button class="attachment-remove" onclick="removeAttachment(${index})">×</button>
+                </div>
+            `).join('');
+        }
+
+        // Remove attachment
+        function removeAttachment(index) {
+            currentAttachments.splice(index, 1);
+            renderAttachments();
+        }
+
+        // View image in fullscreen
+        function viewImage(src) {
+            const viewer = document.getElementById('imageViewer');
+            const viewerImage = document.getElementById('viewerImage');
+            viewerImage.src = src;
+            viewer.classList.add('active');
+        }
+
+        function closeImageViewer() {
+            const viewer = document.getElementById('imageViewer');
+            viewer.classList.remove('active');
+        }
+
+        function openModal(index = null) {
+            const modal = document.getElementById('modalOverlay');
+            const modalTitle = document.getElementById('modalTitle');
+            const commentText = document.getElementById('commentText');
+            
+            if (index !== null) {
+                // Edit mode
+                editingIndex = index;
+                modalTitle.textContent = 'Edit Comment';
+                const comment = comments[index];
+                
+                setSelectedCategories(comment.categories);
+                commentText.value = comment.text;
+                currentAttachments = comment.attachments || [];
+                
+                // Load cropped image if exists
+                if (currentAttachments.length > 0 && currentAttachments[0].type === 'image') {
+                    window.currentCroppedImage = currentAttachments[0].url;
+                    document.getElementById('croppedImage').src = currentAttachments[0].url;
+                    document.getElementById('croppedImageContainer').style.display = 'block';
+                    // Remove from attachments for editing (will be re-added on save)
+                    currentAttachments = currentAttachments.slice(1);
+                }
+                
+                renderAttachments();
+            } else {
+                // Add mode
+                editingIndex = null;
+                modalTitle.textContent = 'Add Comment';
+                clearTagSelection();
+                // Set General as default
+                const generalTag = document.querySelector('.tag-btn[data-category="General"]');
+                if (generalTag) {
+                    generalTag.classList.add('selected');
+                }
+                commentText.value = '';
+                currentAttachments = [];
+                renderAttachments();
+            }
+            
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('modalOverlay');
+            modal.classList.remove('active');
+            editingIndex = null;
+            currentAttachments = [];
+            
+            // Clear cropped image
+            window.currentCroppedImage = null;
+            document.getElementById('croppedImageContainer').style.display = 'none';
+            document.getElementById('croppedImage').src = '';
+        }
+
+        function saveComment() {
+            const categories = getSelectedCategories();
+            const commentText = document.getElementById('commentText');
+            const text = commentText.value.trim();
+            
+            if (categories.length === 0) {
+                showToast('Please select at least one category', 'error');
+                return;
+            }
+            
+            // Allow saving with just image, no text required
+            if (!text && !window.currentCroppedImage) {
+                showToast('Please enter a comment or select an area from the PDF', 'error');
+                return;
+            }
+            
+            const comment = {
+                categories: categories,
+                text: text,
+                attachments: [...currentAttachments]
+            };
+            
+            // Add cropped image if exists with proper naming
+            if (window.currentCroppedImage) {
+                const skuNumber = document.querySelector('.header-value-sku')?.textContent || 'unknown';
+                const imageName = `page${currentPage}_${skuNumber}.png`;
+                comment.attachments.unshift({
+                    url: window.currentCroppedImage,
+                    type: 'image',
+                    name: imageName
+                });
+            }
+            
+            if (editingIndex !== null) {
+                // Update existing comment
+                comments[editingIndex] = comment;
+            } else {
+                // Add new comment
+                comments.push(comment);
+            }
+            
+            renderComments();
+            closeModal();
+        }
+
+        let deleteCommentIndex = null;
+
+        function deleteComment(index) {
+            deleteCommentIndex = index;
+            const comment = comments[index];
+            
+            // Build preview HTML
+            const categoriesHTML = comment.categories.map(cat => 
+                `<span class="confirm-preview-category">${cat}</span>`
+            ).join('');
+            
+            const textHTML = comment.text 
+                ? `<div class="confirm-preview-text">${comment.text}</div>` 
+                : '<div class="confirm-preview-text"><em>No text</em></div>';
+            
+            const thumbnailHTML = comment.attachments && comment.attachments.length > 0 && comment.attachments[0].type === 'image'
+                ? `<img src="${comment.attachments[0].url}" class="confirm-preview-thumbnail" alt="Preview">`
+                : '';
+            
+            document.getElementById('confirmCommentPreview').innerHTML = `
+                <div class="confirm-preview-categories">${categoriesHTML}</div>
+                ${textHTML}
+                ${thumbnailHTML}
+            `;
+            
+            document.getElementById('confirmModal').classList.add('active');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.remove('active');
+            deleteCommentIndex = null;
+        }
+
+        function confirmDelete() {
+            if (deleteCommentIndex !== null) {
+                comments.splice(deleteCommentIndex, 1);
+                renderComments();
+            }
+            closeConfirmModal();
+        }
+
+        // ============================================
+        // AI EXTRACTION SYSTEM
+        // ============================================
+        
+        let aiExtractedData = null;
+
+        function openAIModal() {
+            const modal = document.getElementById('aiModal');
+            modal.classList.add('active');
+            
+            // Simulate AI extraction (placeholder)
+            setTimeout(() => {
+                extractDataWithAI();
+            }, 1500);
+        }
+
+        function closeAIModal() {
+            document.getElementById('aiModal').classList.remove('active');
+            aiExtractedData = null;
+        }
+
+        function extractDataWithAI() {
+            // PLACEHOLDER: This will be replaced with actual AI extraction
+            // For now, create sample data based on current page
+            const currentSKU = document.querySelector('.header-value-sku')?.textContent || 'GR-101';
+            
+            aiExtractedData = {
+                item_id: currentSKU,
+                item_name: "Sample Item Name",
+                item_sku: currentSKU,
+                doc_id: "HOTEL_ROOMS_BIBLE_32.pdf",
+                page_start: currentPage,
+                page_end: currentPage,
+                category: "General",
+                quantity: { 
+                    value: 1, 
+                    unit: "pcs" 
+                },
+                dimensions: {
+                    width: 100,
+                    height: 50,
+                    depth: 30,
+                    unit: "mm",
+                    notes: ""
+                },
+                materials: {
+                    list: [
+                        {
+                            part: "Top",
+                            material: "Wood",
+                            finish: "Matte",
+                            color: "Natural",
+                            notes: ""
+                        }
+                    ]
+                },
+                subitems: {
+                    list: []
+                },
+                media: {
+                    images: [],
+                    drawings: []
+                },
+                notes: {
+                    list: []
+                }
+            };
+            
+            renderAIData();
+        }
+
+        function renderAIData() {
+            const content = document.getElementById('aiModalContent');
+            
+            if (!aiExtractedData) {
+                content.innerHTML = '<div class="ai-loading"><div>No data extracted</div></div>';
+                return;
+            }
+            
+            const data = aiExtractedData;
+            
+            // Generate materials HTML
+            const materialsHTML = data.materials.list.map((mat, idx) => `
+                <div class="ai-list-item">
+                    <div class="ai-field">
+                        <div class="ai-field-label">Part</div>
+                        <input type="text" class="ai-field-input" value="${mat.part}" 
+                               onchange="updateAIListItem('materials', ${idx}, 'part', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Material</div>
+                        <input type="text" class="ai-field-input" value="${mat.material}" 
+                               onchange="updateAIListItem('materials', ${idx}, 'material', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Finish</div>
+                        <input type="text" class="ai-field-input" value="${mat.finish}" 
+                               onchange="updateAIListItem('materials', ${idx}, 'finish', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Color</div>
+                        <input type="text" class="ai-field-input" value="${mat.color}" 
+                               onchange="updateAIListItem('materials', ${idx}, 'color', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Notes</div>
+                        <textarea class="ai-field-input" onchange="updateAIListItem('materials', ${idx}, 'notes', this.value)">${mat.notes || ''}</textarea>
+                    </div>
+                    <button class="modal-btn modal-btn-delete" onclick="removeAIListItem('materials', ${idx})" style="width:100%;margin-top:8px;">Remove Material</button>
+                </div>
+            `).join('');
+            
+            // Generate subitems HTML
+            const subitemsHTML = data.subitems.list.map((sub, idx) => `
+                <div class="ai-list-item">
+                    <div class="ai-field">
+                        <div class="ai-field-label">Item Name</div>
+                        <input type="text" class="ai-field-input" value="${sub.item_name || ''}" 
+                               onchange="updateAIListItem('subitems', ${idx}, 'item_name', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">SKU</div>
+                        <input type="text" class="ai-field-input" value="${sub.item_sku || ''}" 
+                               onchange="updateAIListItem('subitems', ${idx}, 'item_sku', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Quantity</div>
+                        <input type="number" class="ai-field-input" value="${sub.quantity || 1}" 
+                               onchange="updateAIListItem('subitems', ${idx}, 'quantity', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Notes</div>
+                        <textarea class="ai-field-input" onchange="updateAIListItem('subitems', ${idx}, 'notes', this.value)">${sub.notes || ''}</textarea>
+                    </div>
+                    <button class="modal-btn modal-btn-delete" onclick="removeAIListItem('subitems', ${idx})" style="width:100%;margin-top:8px;">Remove Subitem</button>
+                </div>
+            `).join('');
+            
+            // Generate images HTML
+            const imagesHTML = data.media.images.map((img, idx) => `
+                <div class="ai-list-item">
+                    <div class="ai-field">
+                        <div class="ai-field-label">Name</div>
+                        <input type="text" class="ai-field-input" value="${img.name || ''}" 
+                               onchange="updateAIMediaItem('images', ${idx}, 'name', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">File Reference</div>
+                        <input type="text" class="ai-field-input" value="${img.file_ref || ''}" 
+                               onchange="updateAIMediaItem('images', ${idx}, 'file_ref', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Page</div>
+                        <input type="number" class="ai-field-input" value="${img.page || ''}" 
+                               onchange="updateAIMediaItem('images', ${idx}, 'page', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Notes</div>
+                        <textarea class="ai-field-input" onchange="updateAIMediaItem('images', ${idx}, 'notes', this.value)">${img.notes || ''}</textarea>
+                    </div>
+                    <button class="modal-btn modal-btn-delete" onclick="removeAIMediaItem('images', ${idx})" style="width:100%;margin-top:8px;">Remove Image</button>
+                </div>
+            `).join('');
+            
+            // Generate drawings HTML
+            const drawingsHTML = data.media.drawings.map((drw, idx) => `
+                <div class="ai-list-item">
+                    <div class="ai-field">
+                        <div class="ai-field-label">Name</div>
+                        <input type="text" class="ai-field-input" value="${drw.name || ''}" 
+                               onchange="updateAIMediaItem('drawings', ${idx}, 'name', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">File Reference</div>
+                        <input type="text" class="ai-field-input" value="${drw.file_ref || ''}" 
+                               onchange="updateAIMediaItem('drawings', ${idx}, 'file_ref', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Page</div>
+                        <input type="number" class="ai-field-input" value="${drw.page || ''}" 
+                               onchange="updateAIMediaItem('drawings', ${idx}, 'page', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Notes</div>
+                        <textarea class="ai-field-input" onchange="updateAIMediaItem('drawings', ${idx}, 'notes', this.value)">${drw.notes || ''}</textarea>
+                    </div>
+                    <button class="modal-btn modal-btn-delete" onclick="removeAIMediaItem('drawings', ${idx})" style="width:100%;margin-top:8px;">Remove Drawing</button>
+                </div>
+            `).join('');
+            
+            // Generate notes HTML
+            const notesHTML = data.notes.list.map((note, idx) => `
+                <div class="ai-list-item">
+                    <div class="ai-field">
+                        <div class="ai-field-label">Label</div>
+                        <input type="text" class="ai-field-input" value="${note.label || ''}" 
+                               onchange="updateAIListItem('notes', ${idx}, 'label', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Category</div>
+                        <input type="text" class="ai-field-input" value="${note.category || ''}" 
+                               onchange="updateAIListItem('notes', ${idx}, 'category', this.value)">
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Text</div>
+                        <textarea class="ai-field-input ai-field-textarea" onchange="updateAIListItem('notes', ${idx}, 'text', this.value)">${note.text || ''}</textarea>
+                    </div>
+                    <div class="ai-field">
+                        <div class="ai-field-label">Page</div>
+                        <input type="number" class="ai-field-input" value="${note.page || ''}" 
+                               onchange="updateAIListItem('notes', ${idx}, 'page', this.value)">
+                    </div>
+                    <button class="modal-btn modal-btn-delete" onclick="removeAIListItem('notes', ${idx})" style="width:100%;margin-top:8px;">Remove Note</button>
+                </div>
+            `).join('');
+            
+            content.innerHTML = `
+                <!-- Basic Info -->
+                <div class="ai-section expanded">
+                    <div class="ai-section-header" onclick="toggleAISection(this)">
+                        <div class="ai-section-title">Basic Information</div>
+                        <div class="ai-section-toggle">▼</div>
+                    </div>
+                    <div class="ai-section-content">
+                        <div class="ai-field">
+                            <div class="ai-field-label">Item Name</div>
+                            <input type="text" class="ai-field-input" value="${data.item_name}" 
+                                   onchange="updateAIField('item_name', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">SKU</div>
+                            <input type="text" class="ai-field-input" value="${data.item_sku}" 
+                                   onchange="updateAIField('item_sku', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Category</div>
+                            <input type="text" class="ai-field-input" value="${data.category}" 
+                                   onchange="updateAIField('category', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Document ID</div>
+                            <input type="text" class="ai-field-input" value="${data.doc_id || ''}" 
+                                   onchange="updateAIField('doc_id', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Page Start</div>
+                            <input type="number" class="ai-field-input" value="${data.page_start || ''}" 
+                                   onchange="updateAIField('page_start', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Page End</div>
+                            <input type="number" class="ai-field-input" value="${data.page_end || ''}" 
+                                   onchange="updateAIField('page_end', this.value)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quantity -->
+                <div class="ai-section expanded">
+                    <div class="ai-section-header" onclick="toggleAISection(this)">
+                        <div class="ai-section-title">Quantity</div>
+                        <div class="ai-section-toggle">▼</div>
+                    </div>
+                    <div class="ai-section-content">
+                        <div class="ai-field">
+                            <div class="ai-field-label">Value</div>
+                            <input type="number" class="ai-field-input" value="${data.quantity.value}" 
+                                   onchange="updateAIField('quantity.value', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Unit</div>
+                            <input type="text" class="ai-field-input" value="${data.quantity.unit}" 
+                                   onchange="updateAIField('quantity.unit', this.value)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dimensions -->
+                <div class="ai-section expanded">
+                    <div class="ai-section-header" onclick="toggleAISection(this)">
+                        <div class="ai-section-title">Dimensions</div>
+                        <div class="ai-section-toggle">▼</div>
+                    </div>
+                    <div class="ai-section-content">
+                        <div class="ai-field">
+                            <div class="ai-field-label">Width</div>
+                            <input type="number" class="ai-field-input" value="${data.dimensions.width}" 
+                                   onchange="updateAIField('dimensions.width', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Height</div>
+                            <input type="number" class="ai-field-input" value="${data.dimensions.height}" 
+                                   onchange="updateAIField('dimensions.height', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Depth</div>
+                            <input type="number" class="ai-field-input" value="${data.dimensions.depth}" 
+                                   onchange="updateAIField('dimensions.depth', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Unit</div>
+                            <input type="text" class="ai-field-input" value="${data.dimensions.unit}" 
+                                   onchange="updateAIField('dimensions.unit', this.value)">
+                        </div>
+                        <div class="ai-field">
+                            <div class="ai-field-label">Notes</div>
+                            <textarea class="ai-field-input ai-field-textarea" 
+                                      onchange="updateAIField('dimensions.notes', this.value)">${data.dimensions.notes}</textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Materials -->
+                <div class="ai-section expanded">
+                    <div class="ai-section-header" onclick="toggleAISection(this)">
+                        <div class="ai-section-title">Materials (${data.materials.list.length})</div>
+                        <div class="ai-section-toggle">▼</div>
+                    </div>
+                    <div class="ai-section-content">
+                        ${materialsHTML}
+                        <button class="modal-btn modal-btn-save" onclick="addAIMaterial()" style="width:100%;margin-top:12px;">+ Add Material</button>
+                    </div>
+                </div>
+
+                <!-- Subitems -->
+                <div class="ai-section">
+                    <div class="ai-section-header" onclick="toggleAISection(this)">
+                        <div class="ai-section-title">Subitems (${data.subitems.list.length})</div>
+                        <div class="ai-section-toggle">▼</div>
+                    </div>
+                    <div class="ai-section-content">
+                        ${subitemsHTML || '<div style="color:#718096;padding:12px;text-align:center;">No subitems</div>'}
+                        <button class="modal-btn modal-btn-save" onclick="addAISubitem()" style="width:100%;margin-top:12px;">+ Add Subitem</button>
+                    </div>
+                </div>
+
+                <!-- Media -->
+                <div class="ai-section">
+                    <div class="ai-section-header" onclick="toggleAISection(this)">
+                        <div class="ai-section-title">Media (${data.media.images.length + data.media.drawings.length})</div>
+                        <div class="ai-section-toggle">▼</div>
+                    </div>
+                    <div class="ai-section-content">
+                        <div style="margin-bottom:16px;">
+                            <div style="color:#ffffff;font-weight:600;margin-bottom:8px;">Images (${data.media.images.length})</div>
+                            ${imagesHTML || '<div style="color:#718096;padding:8px;text-align:center;">No images</div>'}
+                            <button class="modal-btn modal-btn-save" onclick="addAIMedia('images')" style="width:100%;margin-top:8px;">+ Add Image</button>
+                        </div>
+                        <div>
+                            <div style="color:#ffffff;font-weight:600;margin-bottom:8px;">Drawings (${data.media.drawings.length})</div>
+                            ${drawingsHTML || '<div style="color:#718096;padding:8px;text-align:center;">No drawings</div>'}
+                            <button class="modal-btn modal-btn-save" onclick="addAIMedia('drawings')" style="width:100%;margin-top:8px;">+ Add Drawing</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div class="ai-section">
+                    <div class="ai-section-header" onclick="toggleAISection(this)">
+                        <div class="ai-section-title">Notes (${data.notes.list.length})</div>
+                        <div class="ai-section-toggle">▼</div>
+                    </div>
+                    <div class="ai-section-content">
+                        ${notesHTML || '<div style="color:#718096;padding:12px;text-align:center;">No notes</div>'}
+                        <button class="modal-btn modal-btn-save" onclick="addAINote()" style="width:100%;margin-top:12px;">+ Add Note</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleAISection(header) {
+            const section = header.parentElement;
+            section.classList.toggle('expanded');
+        }
+
+        function updateAIField(path, value) {
+            if (!aiExtractedData) return;
+            
+            const keys = path.split('.');
+            let obj = aiExtractedData;
+            
+            for (let i = 0; i < keys.length - 1; i++) {
+                obj = obj[keys[i]];
+            }
+            
+            obj[keys[keys.length - 1]] = value;
+        }
+
+        function updateAIListItem(listName, index, field, value) {
+            if (!aiExtractedData) return;
+            aiExtractedData[listName].list[index][field] = value;
+        }
+
+        function updateAIMediaItem(mediaType, index, field, value) {
+            if (!aiExtractedData) return;
+            aiExtractedData.media[mediaType][index][field] = value;
+        }
+
+        function addAIMaterial() {
+            if (!aiExtractedData) return;
+            aiExtractedData.materials.list.push({
+                part: "New Part",
+                material: "",
+                finish: "",
+                color: "",
+                notes: ""
+            });
+            renderAIData();
+        }
+
+        function addAISubitem() {
+            if (!aiExtractedData) return;
+            aiExtractedData.subitems.list.push({
+                item_id: "",
+                item_name: "New Subitem",
+                item_sku: "",
+                quantity: 1,
+                quantity_unit: "pcs",
+                notes: ""
+            });
+            renderAIData();
+        }
+
+        function addAIMedia(type) {
+            if (!aiExtractedData) return;
+            aiExtractedData.media[type].push({
+                name: "",
+                file_ref: "",
+                page: currentPage,
+                notes: ""
+            });
+            renderAIData();
+        }
+
+        function addAINote() {
+            if (!aiExtractedData) return;
+            aiExtractedData.notes.list.push({
+                note_id: "N" + (aiExtractedData.notes.list.length + 1),
+                label: "General",
+                label_type: "fixed",
+                category: "general",
+                text: "",
+                files: [],
+                page: currentPage
+            });
+            renderAIData();
+        }
+
+        function removeAIListItem(listName, index) {
+            if (!aiExtractedData) return;
+            aiExtractedData[listName].list.splice(index, 1);
+            renderAIData();
+        }
+
+        function removeAIMediaItem(mediaType, index) {
+            if (!aiExtractedData) return;
+            aiExtractedData.media[mediaType].splice(index, 1);
+            renderAIData();
+        }
+
+        function exportJSON() {
+            if (!aiExtractedData) return;
+            
+            const dataStr = JSON.stringify(aiExtractedData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${aiExtractedData.item_sku}_data.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportCSV() {
+            if (!aiExtractedData) return;
+            
+            // Convert to flat CSV format
+            const rows = [];
+            rows.push(['Field', 'Value']);
+            
+            rows.push(['Item Name', aiExtractedData.item_name]);
+            rows.push(['SKU', aiExtractedData.item_sku]);
+            rows.push(['Category', aiExtractedData.category]);
+            rows.push(['Quantity', `${aiExtractedData.quantity.value} ${aiExtractedData.quantity.unit}`]);
+            rows.push(['Dimensions', `${aiExtractedData.dimensions.width}×${aiExtractedData.dimensions.height}×${aiExtractedData.dimensions.depth} ${aiExtractedData.dimensions.unit}`]);
+            
+            const csvContent = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${aiExtractedData.item_sku}_data.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Export existing comments from the panel
+        function exportCommentsJSON() {
+            if (comments.length === 0) {
+                showToast('No comments to export', 'info');
+                return;
+            }
+            
+            const dataStr = JSON.stringify(comments, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            const currentSKU = document.querySelector('.header-value-sku')?.textContent || 'comments';
+            link.download = `${currentSKU}_comments.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+            
+            showToast('JSON exported successfully!', 'success');
+        }
+
+        function exportCommentsHTML() {
+            if (comments.length === 0) {
+                showToast('No comments to export', 'info');
+                return;
+            }
+            
+            // Create HTML table with embedded images
+            let htmlContent = `
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comments Export</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        th {
+            background: #2d3748;
+            color: white;
+            padding: 12px;
+            text-align: right;
+            font-weight: 600;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+            text-align: right;
+        }
+        tr:hover {
+            background: #f7fafc;
+        }
+        .category-tag {
+            display: inline-block;
+            background: #48bb78;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin: 2px;
+        }
+        .image-cell {
+            text-align: center;
+        }
+        .image-cell img {
+            max-width: 150px;
+            max-height: 150px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .no-image {
+            color: #a0aec0;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Comments Export</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>קטגוריות</th>
+                <th>תוכן</th>
+                <th>תמונה</th>
+            </tr>
+        </thead>
+        <tbody>
+`;
+            
+            comments.forEach((comment, idx) => {
+                const categories = comment.categories.map(cat => 
+                    `<span class="category-tag">${cat}</span>`
+                ).join(' ');
+                
+                const text = comment.text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/\n/g, '<br>');
+                
+                // Get first image attachment
+                let imageHTML = '<span class="no-image">אין תמונה</span>';
+                if (comment.attachments && comment.attachments.length > 0) {
+                    const firstAttachment = comment.attachments[0];
+                    if (firstAttachment.type === 'image' && firstAttachment.url) {
+                        imageHTML = `<img src="${firstAttachment.url}" alt="תמונה ${idx + 1}">`;
+                    } else if (typeof firstAttachment === 'string' && firstAttachment.startsWith('data:image')) {
+                        imageHTML = `<img src="${firstAttachment}" alt="תמונה ${idx + 1}">`;
+                    }
+                }
+                
+                htmlContent += `
+            <tr>
+                <td>${idx + 1}</td>
+                <td>${categories}</td>
+                <td>${text}</td>
+                <td class="image-cell">${imageHTML}</td>
+            </tr>
+`;
+            });
+            
+            htmlContent += `
+        </tbody>
+    </table>
+</body>
+</html>
+`;
+            
+            const blob = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const currentSKU = document.querySelector('.header-value-sku')?.textContent || 'comments';
+            link.download = `${currentSKU}_comments.html`;
+            link.click();
+            URL.revokeObjectURL(url);
+            
+            showToast('HTML exported successfully with images!', 'success');
+        }
+
+        async function exportCommentsExcel() {
+            if (comments.length === 0) {
+                showToast('No comments to export', 'info');
+                return;
+            }
+            
+            if (typeof ExcelJS === 'undefined') {
+                showToast('Excel library not loaded', 'error');
+                return;
+            }
+            
+            try {
+                // Create workbook
+                const workbook = new ExcelJS.Workbook();
+                const worksheet = workbook.addWorksheet('Comments');
+                
+                // Define columns
+                worksheet.columns = [
+                    { header: '#', key: 'index', width: 8 },
+                    { header: 'Categories', key: 'categories', width: 20 },
+                    { header: 'Text', key: 'text', width: 50 },
+                    { header: 'Image', key: 'image', width: 20 }
+                ];
+                
+                // Style header row
+                worksheet.getRow(1).font = { bold: true, size: 12 };
+                worksheet.getRow(1).fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FF2d3748' }
+                };
+                worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                
+                // Add data rows
+                for (let idx = 0; idx < comments.length; idx++) {
+                    const comment = comments[idx];
+                    const row = worksheet.addRow({
+                        index: idx + 1,
+                        categories: comment.categories.join(', '),
+                        text: comment.text,
+                        image: '' // Will add image separately
+                    });
+                    
+                    // Set row height for image
+                    row.height = 80;
+                    
+                    // Add image if exists
+                    if (comment.attachments && comment.attachments.length > 0) {
+                        const firstAttachment = comment.attachments[0];
+                        let imageBase64 = null;
+                        
+                        if (firstAttachment.type === 'image' && firstAttachment.url) {
+                            imageBase64 = firstAttachment.url;
+                        } else if (typeof firstAttachment === 'string' && firstAttachment.startsWith('data:image')) {
+                            imageBase64 = firstAttachment;
+                        }
+                        
+                        if (imageBase64) {
+                            // Extract base64 data (remove data:image/png;base64, prefix)
+                            const base64Data = imageBase64.split(',')[1];
+                            
+                            // Add image to workbook
+                            const imageId = workbook.addImage({
+                                base64: base64Data,
+                                extension: 'png'
+                            });
+                            
+                            // Add image to cell
+                            worksheet.addImage(imageId, {
+                                tl: { col: 3, row: idx + 1 }, // Top-left corner (column D, current row)
+                                ext: { width: 100, height: 100 }
+                            });
+                        } else {
+                            row.getCell('image').value = 'No image';
+                        }
+                    } else {
+                        row.getCell('image').value = 'No image';
+                    }
+                }
+                
+                // Generate Excel file
+                const buffer = await workbook.xlsx.writeBuffer();
+                const blob = new Blob([buffer], { 
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                const currentSKU = document.querySelector('.header-value-sku')?.textContent || 'comments';
+                link.download = `${currentSKU}_comments.xlsx`;
+                link.click();
+                URL.revokeObjectURL(url);
+                
+                showToast('Excel exported with embedded images!', 'success');
+            } catch (error) {
+                console.error('Excel export error:', error);
+                showToast('Error exporting Excel: ' + error.message, 'error');
+            }
+        }
+
+        function confirmAIData() {
+            if (!aiExtractedData) return;
+            
+            const data = aiExtractedData;
+            
+            // Create comment for each field
+            const newComments = [];
+            
+            // Item Name
+            newComments.push({
+                categories: ['General'],
+                text: `Item Name: ${data.item_name}`,
+                attachments: []
+            });
+            
+            // SKU
+            newComments.push({
+                categories: ['General'],
+                text: `SKU: ${data.item_sku}`,
+                attachments: []
+            });
+            
+            // Category
+            newComments.push({
+                categories: ['General'],
+                text: `Category: ${data.category}`,
+                attachments: []
+            });
+            
+            // Quantity
+            newComments.push({
+                categories: ['General'],
+                text: `Quantity: ${data.quantity.value} ${data.quantity.unit}`,
+                attachments: []
+            });
+            
+            // Dimensions
+            newComments.push({
+                categories: ['Dimensions'],
+                text: `Dimensions: ${data.dimensions.width}×${data.dimensions.height}×${data.dimensions.depth} ${data.dimensions.unit}${data.dimensions.notes ? '\nNotes: ' + data.dimensions.notes : ''}`,
+                attachments: []
+            });
+            
+            // Materials - each as separate comment
+            data.materials.list.forEach(mat => {
+                newComments.push({
+                    categories: ['Material'],
+                    text: `Material - ${mat.part}:\nMaterial: ${mat.material}\nFinish: ${mat.finish}\nColor: ${mat.color}${mat.notes ? '\nNotes: ' + mat.notes : ''}`,
+                    attachments: []
+                });
+            });
+            
+            // Subitems - each as separate comment
+            data.subitems.list.forEach(sub => {
+                newComments.push({
+                    categories: ['Other'],
+                    text: `Subitem: ${sub.item_name}\nSKU: ${sub.item_sku}\nQuantity: ${sub.quantity}${sub.notes ? '\nNotes: ' + sub.notes : ''}`,
+                    attachments: []
+                });
+            });
+            
+            // Media Images - each as separate comment
+            data.media.images.forEach(img => {
+                newComments.push({
+                    categories: ['General'],
+                    text: `Image: ${img.name}\nFile: ${img.file_ref}\nPage: ${img.page}${img.notes ? '\nNotes: ' + img.notes : ''}`,
+                    attachments: []
+                });
+            });
+            
+            // Media Drawings - each as separate comment
+            data.media.drawings.forEach(drw => {
+                newComments.push({
+                    categories: ['General'],
+                    text: `Drawing: ${drw.name}\nFile: ${drw.file_ref}\nPage: ${drw.page}${drw.notes ? '\nNotes: ' + drw.notes : ''}`,
+                    attachments: []
+                });
+            });
+            
+            // Notes - each as separate comment
+            data.notes.list.forEach(note => {
+                newComments.push({
+                    categories: [note.label || 'General'],
+                    text: `${note.label}: ${note.text}\nPage: ${note.page}`,
+                    attachments: []
+                });
+            });
+            
+            // Add all new comments
+            comments.push(...newComments);
+            renderComments();
+            
+            // Close modal
+            // Close modal
+            closeAIModal();
+            
+            // Show success message
+            showToast(`Successfully created ${newComments.length} comments from AI extraction!`, 'success');
+        }
+
+        function renderComments() {
+            const commentsList = document.getElementById('commentsList');
+            
+            if (comments.length === 0) {
+                commentsList.innerHTML = `
+                    <div class="empty-comments">
+                        No comments yet. Click "Add Comment" to start.
+                    </div>
+                `;
+                return;
+            }
+            
+            commentsList.innerHTML = comments.map((comment, index) => {
+                const categoriesHTML = comment.categories.map(cat => 
+                    `<span class="comment-category">${cat}</span>`
+                ).join(' ');
+                
+                // Get first image attachment (cropped image)
+                const firstImage = comment.attachments && comment.attachments.length > 0 
+                    ? comment.attachments[0] 
+                    : null;
+                
+                const thumbnailHTML = firstImage && firstImage.type === 'image'
+                    ? `<div class="comment-thumbnail" onclick="event.stopPropagation(); viewImage('${firstImage.url}')">
+                        <img src="${firstImage.url}" alt="${firstImage.name || 'Cropped'}">
+                    </div>`
+                    : '';
+                
+                const otherAttachmentsHTML = comment.attachments && comment.attachments.length > 1
+                    ? `<div class="comment-attachments">
+                        ${comment.attachments.slice(1).map(att => 
+                            `<div class="comment-attachment-thumb" onclick="event.stopPropagation(); viewImage('${att.url || att}')">
+                                <img src="${att.url || att}" alt="Attachment">
+                            </div>`
+                        ).join('')}
+                    </div>`
+                    : '';
+                
+                return `
+                    <div class="comment-item" onclick="openModal(${index})">
+                        <div class="comment-header">
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                ${categoriesHTML}
+                            </div>
+                            <div class="comment-actions">
+                                <button class="comment-action-btn" onclick="event.stopPropagation(); openModal(${index})">Edit</button>
+                                <button class="comment-action-btn" onclick="event.stopPropagation(); deleteComment(${index})">Delete</button>
+                            </div>
+                        </div>
+                        <div class="comment-body">
+                            <div class="comment-text">${comment.text || '<em>No text</em>'}</div>
+                            ${thumbnailHTML}
+                        </div>
+                        ${otherAttachmentsHTML}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('modalOverlay').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+
+        // Close confirm modal when clicking outside
+        document.getElementById('confirmModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeConfirmModal();
+            }
+        });
+
+        // Close image viewer when clicking outside
+        document.getElementById('imageViewer').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeImageViewer();
+            }
+        });
+
+        // Panel functionality - Left/Right docking only
+        const leftPanel = document.getElementById('leftPanel');
+        const resizeHandles = document.querySelectorAll('.resize-handle');
+        const pdfViewer = document.querySelector('.pdf-viewer');
+        
+        let isResizing = false;
+        let currentResizeDirection = null;
+        let startX, startWidth;
+        let isCollapsed = false;
+        let currentDock = 'left'; // Only 'left' or 'right'
+
+        // Initialize docked state
+        leftPanel.classList.add('docked-left');
+        pdfViewer.style.left = '336px';
+        pdfViewer.style.right = '0';
+
+        // Switch sides function
+        function switchSides() {
+            if (currentDock === 'left') {
+                dockPanel('right');
+            } else {
+                dockPanel('left');
+            }
+        }
+
+        // Resizing
+        resizeHandles.forEach(handle => {
+            handle.addEventListener('mousedown', function(e) {
+                const direction = this.dataset.direction;
+                // Only allow horizontal resize (e/w/ne/nw/se/sw)
+                if (!direction.includes('e') && !direction.includes('w')) return;
+                
+                isResizing = true;
+                currentResizeDirection = direction;
+                startX = e.clientX;
+                startWidth = leftPanel.offsetWidth;
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            
+            const deltaX = e.clientX - startX;
+            let newWidth = startWidth;
+            
+            // Calculate new width based on dock side and resize direction
+            if (currentDock === 'left') {
+                if (currentResizeDirection.includes('e')) {
+                    newWidth = startWidth + deltaX;
+                }
+            } else if (currentDock === 'right') {
+                if (currentResizeDirection.includes('w')) {
+                    newWidth = startWidth - deltaX;
+                }
+            }
+            
+            // Apply width constraints
+            if (newWidth >= 280 && newWidth <= 600) {
+                leftPanel.style.width = newWidth + 'px';
+                
+                // Update PDF viewer immediately
+                if (currentDock === 'left') {
+                    pdfViewer.style.left = newWidth + 'px';
+                } else {
+                    pdfViewer.style.right = newWidth + 'px';
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                currentResizeDirection = null;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+
+        function dockPanel(position) {
+            currentDock = position;
+            leftPanel.classList.remove('docked-left', 'docked-right');
+            
+            const panelWidth = isCollapsed ? 50 : leftPanel.offsetWidth;
+            
+            if (position === 'left') {
+                leftPanel.style.left = '0';
+                leftPanel.style.right = 'auto';
+                leftPanel.classList.add('docked-left');
+                pdfViewer.style.left = panelWidth + 'px';
+                pdfViewer.style.right = '0';
+            } else {
+                leftPanel.style.left = 'auto';
+                leftPanel.style.right = '0';
+                leftPanel.classList.add('docked-right');
+                pdfViewer.style.left = '0';
+                pdfViewer.style.right = panelWidth + 'px';
+            }
+        }
+
+        // Switch between left and right sides
+        function switchSides() {
+            if (currentDock === 'left') {
+                currentDock = 'right';
+                leftPanel.classList.remove('docked-left');
+                leftPanel.classList.add('docked-right');
+            } else {
+                currentDock = 'left';
+                leftPanel.classList.remove('docked-right');
+                leftPanel.classList.add('docked-left');
+            }
+            updatePDFViewer();
+        }
+
+        // Update PDF viewer based on panel state
+        function updatePDFViewer() {
+            const panelWidth = isCollapsed ? 40 : leftPanel.offsetWidth;
+            
+            if (currentDock === 'left') {
+                pdfViewer.style.left = panelWidth + 'px';
+                pdfViewer.style.right = '0';
+            } else {
+                pdfViewer.style.left = '0';
+                pdfViewer.style.right = panelWidth + 'px';
+            }
+        }
+
+        // Toggle collapse function
+        function toggleCollapse() {
+            isCollapsed = !isCollapsed;
+            leftPanel.classList.toggle('collapsed');
+            
+            const collapseBtn = document.getElementById('collapseBtn');
+            if (isCollapsed) {
+                collapseBtn.textContent = '▶';
+                collapseBtn.title = 'Expand';
+            } else {
+                collapseBtn.textContent = '◀';
+                collapseBtn.title = 'Collapse';
+            }
+            
+            updatePDFViewer();
+        }
+
+        // Handle PDF upload
+        let pdfDoc = null;
+        let zoomLevel = 1.0;
+        let currentPage = 1;
+        let totalPages = 0;
+        let allCanvases = [];
+        let cropModeEnabled = true; // Default enabled
+        let currentZoomedPage = null;
+        
+        // Crop selection variables
+        let isSelecting = false;
+        let selectionStart = {x: 0, y: 0};
+        let selectionEnd = {x: 0, y: 0};
+        let selectionCanvas = null;
+        let selectionCtx = null;
+
+        // Configure PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        async function renderAllPages() {
+            const container = document.getElementById('pdfCanvasContainer');
+            const containerWidth = container.clientWidth - 40;
+            allCanvases = [];
+            
+            // Clear existing canvases
+            container.innerHTML = '';
+            
+            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                try {
+                    const page = await pdfDoc.getPage(pageNum);
+                    const canvas = document.createElement('canvas');
+                    canvas.className = 'pdf-canvas';
+                    canvas.dataset.pageNum = pageNum;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // All pages render at 100% (fit to width)
+                    const viewport1 = page.getViewport({scale: 1});
+                    const pageNaturalWidth = viewport1.width;
+                    const fitWidthScale = containerWidth / pageNaturalWidth;
+                    const viewport = page.getViewport({scale: fitWidthScale});
+                    
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    canvas.dataset.naturalScale = fitWidthScale;
+                    
+                    const renderContext = {
+                        canvasContext: ctx,
+                        viewport: viewport
+                    };
+                    
+                    await page.render(renderContext).promise;
+                    container.appendChild(canvas);
+                    allCanvases.push(canvas);
+                } catch (error) {
+                    console.error(`Error rendering page ${pageNum}:`, error);
+                }
+            }
+            
+            updateToolbarPageInfo();
+            if (!document.getElementById('pdfContent').dataset.scrollSetup) {
+                setupScrollTracking();
+                document.getElementById('pdfContent').dataset.scrollSetup = 'true';
+            }
+        }
+
+        // Debounce function to avoid too many re-renders
+        let resizeTimeout;
+        let isRerendering = false;
+        
+        async function handlePDFResize() {
+            if (!pdfDoc || isRerendering) return;
+            
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(async () => {
+                isRerendering = true;
+                await renderAllPages();
+                resizeSelectionCanvas(); // Resize selection canvas after PDF re-render
+                isRerendering = false;
+            }, 200); // Wait 200ms after resize stops for smoother experience
+        }
+
+        // Watch for PDF viewer size changes
+        const pdfViewerElement = document.querySelector('.pdf-viewer');
+        const resizeObserver = new ResizeObserver(() => {
+            handlePDFResize();
+        });
+        
+        // Start observing when PDF is loaded
+        let isObserving = false;
+
+        async function renderSinglePage(pageNum, zoom) {
+            if (pageNum < 1 || pageNum > totalPages) return;
+            
+            const canvas = allCanvases[pageNum - 1];
+            if (!canvas) return;
+            
+            const page = await pdfDoc.getPage(pageNum);
+            const ctx = canvas.getContext('2d');
+            
+            // Get the natural fit-to-width scale
+            const naturalScale = parseFloat(canvas.dataset.naturalScale);
+            const finalScale = naturalScale * zoom;
+            const viewport = page.getViewport({scale: finalScale});
+            
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            
+            const renderContext = {
+                canvasContext: ctx,
+                viewport: viewport
+            };
+            
+            await page.render(renderContext).promise;
+        }
+
+        function setupScrollTracking() {
+            const pdfContent = document.getElementById('pdfContent');
+            pdfContent.addEventListener('scroll', function() {
+                updateCurrentPage();
+            });
+        }
+
+        function updateCurrentPage() {
+            const pdfContent = document.getElementById('pdfContent');
+            const viewportHeight = pdfContent.clientHeight;
+            
+            let newCurrentPage = currentPage;
+            
+            for (let i = 0; i < allCanvases.length; i++) {
+                const canvas = allCanvases[i];
+                const rect = canvas.getBoundingClientRect();
+                const containerRect = pdfContent.getBoundingClientRect();
+                
+                if (rect.top <= containerRect.top + viewportHeight / 2 && rect.bottom >= containerRect.top + viewportHeight / 2) {
+                    newCurrentPage = i + 1;
+                    break;
+                }
+            }
+            
+            // If page changed, reset zoom to 100%
+            if (newCurrentPage !== currentPage) {
+                const oldPage = currentPage;
+                currentPage = newCurrentPage;
+                
+                // Reset old page to 100% if it was zoomed
+                if (currentZoomedPage === oldPage && zoomLevel !== 1.0) {
+                    renderSinglePage(oldPage, 1.0);
+                }
+                
+                // Reset zoom level to 100%
+                zoomLevel = 1.0;
+                updateZoomLevel();
+                currentZoomedPage = null;
+                
+                updateToolbarPageInfo();
+            }
+        }
+
+        function updateToolbarPageInfo() {
+            document.getElementById('toolbarPageInfo').textContent = `Page ${currentPage} / ${totalPages}`;
+            document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+            document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+        }
+
+        function scrollToPrevPage() {
+            if (currentPage > 1) {
+                const targetCanvas = allCanvases[currentPage - 2];
+                targetCanvas.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function scrollToNextPage() {
+            if (currentPage < totalPages) {
+                const targetCanvas = allCanvases[currentPage];
+                targetCanvas.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function zoomIn() {
+            zoomLevel = Math.min(zoomLevel + 0.25, 3.0);
+            updateZoomLevel();
+            applyZoomToCurrentPage();
+        }
+
+        function zoomOut() {
+            zoomLevel = Math.max(zoomLevel - 0.25, 0.5);
+            updateZoomLevel();
+            applyZoomToCurrentPage();
+        }
+
+        function updateZoomLevel() {
+            const percentage = Math.round(zoomLevel * 100);
+            document.getElementById('zoomLevel').textContent = `${percentage}%`;
+        }
+
+        async function applyZoomToCurrentPage() {
+            if (!pdfDoc || currentPage < 1 || currentPage > totalPages) return;
+            
+            // If there was a previously zoomed page and it's different, reset it to 100%
+            if (currentZoomedPage !== null && currentZoomedPage !== currentPage) {
+                await renderSinglePage(currentZoomedPage, 1.0);
+            }
+            
+            // Apply zoom to current page
+            await renderSinglePage(currentPage, zoomLevel);
+            currentZoomedPage = currentPage;
+        }
+
+        function toggleCropMode() {
+            cropModeEnabled = !cropModeEnabled;
+            const cropBtn = document.getElementById('cropMode');
+            const pdfContent = document.getElementById('pdfContent');
+            
+            if (cropModeEnabled) {
+                cropBtn.classList.add('active');
+                if (pdfContent) {
+                    pdfContent.style.cursor = 'crosshair';
+                }
+            } else {
+                cropBtn.classList.remove('active');
+                if (pdfContent) {
+                    pdfContent.style.cursor = 'default';
+                }
+                // Clear any active selection
+                if (selectionCanvas) {
+                    selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+                }
+            }
+        }
+
+        function initializeCropMode() {
+            const pdfContent = document.getElementById('pdfContent');
+            
+            pdfContent.addEventListener('mousedown', handleCropMouseDown);
+            pdfContent.addEventListener('mousemove', handleCropMouseMove);
+            pdfContent.addEventListener('mouseup', handleCropMouseUp);
+            
+            // Set initial state
+            const cropBtn = document.getElementById('cropMode');
+            if (cropModeEnabled) {
+                cropBtn.classList.add('active');
+                pdfContent.style.cursor = 'crosshair';
+            }
+        }
+
+        function handleCropMouseDown(e) {
+            if (!cropModeEnabled || !pdfDoc) return;
+            
+            const pdfContent = document.getElementById('pdfContent');
+            const rect = pdfContent.getBoundingClientRect();
+            
+            // Store absolute position relative to pdfContent's scrollable area
+            selectionStart.x = e.clientX - rect.left + pdfContent.scrollLeft;
+            selectionStart.y = e.clientY - rect.top + pdfContent.scrollTop;
+            
+            isSelecting = true;
+            
+            // Hide toolbar during selection
+            const toolbar = document.getElementById('pdfToolbar');
+            if (toolbar) {
+                toolbar.style.display = 'none';
+            }
+            
+            // Create or clear selection canvas
+            if (!selectionCanvas) {
+                createSelectionCanvas();
+            } else {
+                selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+            }
+        }
+
+        function handleCropMouseMove(e) {
+            if (!isSelecting || !cropModeEnabled) return;
+            
+            const pdfContent = document.getElementById('pdfContent');
+            const rect = pdfContent.getBoundingClientRect();
+            
+            // Update end position
+            selectionEnd.x = e.clientX - rect.left + pdfContent.scrollLeft;
+            selectionEnd.y = e.clientY - rect.top + pdfContent.scrollTop;
+            
+            drawSelection();
+        }
+
+        function handleCropMouseUp(e) {
+            if (!isSelecting || !cropModeEnabled) return;
+            
+            isSelecting = false;
+            
+            const width = Math.abs(selectionEnd.x - selectionStart.x);
+            const height = Math.abs(selectionEnd.y - selectionStart.y);
+            
+            // Show toolbar again
+            const toolbar = document.getElementById('pdfToolbar');
+            if (toolbar) {
+                toolbar.style.display = 'flex';
+            }
+            
+            // Minimum selection size
+            if (width > 10 && height > 10) {
+                captureSelection();
+            }
+            
+            // Clear selection canvas
+            if (selectionCanvas && selectionCtx) {
+                selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+            }
+        }
+
+        function createSelectionCanvas() {
+            const container = document.getElementById('pdfCanvasContainer');
+            if (!container) return;
+            
+            selectionCanvas = document.createElement('canvas');
+            selectionCanvas.style.position = 'absolute';
+            selectionCanvas.style.top = '0';
+            selectionCanvas.style.left = '0';
+            selectionCanvas.style.pointerEvents = 'none';
+            selectionCanvas.style.zIndex = '100';
+            selectionCanvas.width = container.scrollWidth;
+            selectionCanvas.height = container.scrollHeight;
+            
+            selectionCtx = selectionCanvas.getContext('2d');
+            container.style.position = 'relative';
+            container.appendChild(selectionCanvas);
+        }
+
+        function resizeSelectionCanvas() {
+            if (!selectionCanvas) return;
+            
+            const container = document.getElementById('pdfCanvasContainer');
+            if (!container) return;
+            
+            // Update canvas dimensions
+            selectionCanvas.width = container.scrollWidth;
+            selectionCanvas.height = container.scrollHeight;
+            
+            // Re-get context after resize
+            selectionCtx = selectionCanvas.getContext('2d');
+        }
+
+        function drawSelection() {
+            if (!selectionCanvas || !selectionCtx) return;
+            
+            // Clear previous drawing
+            selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+            
+            // Calculate rectangle coordinates
+            const x = Math.min(selectionStart.x, selectionEnd.x);
+            const y = Math.min(selectionStart.y, selectionEnd.y);
+            const width = Math.abs(selectionEnd.x - selectionStart.x);
+            const height = Math.abs(selectionEnd.y - selectionStart.y);
+            
+            // Draw red dashed border
+            selectionCtx.strokeStyle = '#ff0000';
+            selectionCtx.lineWidth = 3;
+            selectionCtx.setLineDash([8, 4]);
+            selectionCtx.strokeRect(x, y, width, height);
+            
+            // Draw red semi-transparent fill
+            selectionCtx.fillStyle = 'rgba(255, 0, 0, 0.15)';
+            selectionCtx.fillRect(x, y, width, height);
+        }
+
+        function captureSelection() {
+            const x = Math.min(selectionStart.x, selectionEnd.x);
+            const y = Math.min(selectionStart.y, selectionEnd.y);
+            const width = Math.abs(selectionEnd.x - selectionStart.x);
+            const height = Math.abs(selectionEnd.y - selectionStart.y);
+            
+            // Find which canvas contains this selection
+            const pdfContent = document.getElementById('pdfContent');
+            let targetCanvas = null;
+            let canvasOffsetY = 0;
+            
+            for (let canvas of allCanvases) {
+                const rect = canvas.getBoundingClientRect();
+                const containerRect = pdfContent.getBoundingClientRect();
+                const relativeTop = rect.top - containerRect.top + pdfContent.scrollTop;
+                const relativeBottom = relativeTop + canvas.height;
+                
+                if (y >= relativeTop && y <= relativeBottom) {
+                    targetCanvas = canvas;
+                    canvasOffsetY = relativeTop;
+                    break;
+                }
+            }
+            
+            if (!targetCanvas) return;
+            
+            // Create a temporary canvas to capture the selection
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Calculate coordinates relative to the canvas
+            const canvasX = x - (targetCanvas.getBoundingClientRect().left - pdfContent.getBoundingClientRect().left + pdfContent.scrollLeft);
+            const canvasY = y - canvasOffsetY;
+            
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            
+            // Draw the selected portion
+            tempCtx.drawImage(
+                targetCanvas,
+                canvasX, canvasY, width, height,
+                0, 0, width, height
+            );
+            
+            // Convert to image
+            const croppedImageData = tempCanvas.toDataURL('image/png');
+            
+            // Open modal with cropped image
+            openModalWithCroppedImage(croppedImageData);
+        }
+
+        function openModalWithCroppedImage(imageData) {
+            // Show cropped image in modal
+            const croppedImageContainer = document.getElementById('croppedImageContainer');
+            const croppedImage = document.getElementById('croppedImage');
+            
+            croppedImage.src = imageData;
+            croppedImageContainer.style.display = 'block';
+            
+            // Store image data for saving
+            window.currentCroppedImage = imageData;
+            
+            // Open modal
+            openModal();
+        }
+
+        window.handlePdfUpload = function(event) {
+            const file = event.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                const fileReader = new FileReader();
+                
+                fileReader.onload = function() {
+                    const typedarray = new Uint8Array(this.result);
+                    
+                    pdfjsLib.getDocument(typedarray).promise.then(async function(pdf) {
+                        pdfDoc = pdf;
+                        totalPages = pdf.numPages;
+                        currentPage = 1;
+                        zoomLevel = 1.0;
+                        
+                        const pdfContent = document.getElementById('pdfContent');
+                        pdfContent.innerHTML = `
+                            <div class="pdf-canvas-container" id="pdfCanvasContainer">
+                            </div>
+                        `;
+                        
+                        await renderAllPages();
+                        
+                        // Start observing PDF viewer size changes
+                        if (!isObserving) {
+                            resizeObserver.observe(pdfViewerElement);
+                            isObserving = true;
+                        }
+                        
+                        // Show toolbar
+                        document.getElementById('pdfToolbar').classList.add('active');
+                        updateZoomLevel();
+                        
+                        // Initialize crop mode
+                        initializeCropMode();
+                    });
+                };
+                
+                fileReader.readAsArrayBuffer(file);
+            } else {
+                showToast('Please select a valid PDF file', 'error');
+            }
+        };
+
+        // Attach event listener to file input
+        document.getElementById('pdfFileInput').addEventListener('change', window.handlePdfUpload);
+
+    </script>
